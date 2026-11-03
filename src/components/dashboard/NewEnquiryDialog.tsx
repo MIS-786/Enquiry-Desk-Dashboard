@@ -1,4 +1,11 @@
-import { FileSpreadsheet, Loader2, Plus } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileSpreadsheet,
+  Loader2,
+  Plus,
+  Settings2,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -36,12 +43,14 @@ export function NewEnquiryDialog({
   existingBrokers = [],
   existingItems = [],
   onCreated,
+  onOpenSetup,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   existingBrokers?: string[];
   existingItems?: string[];
   onCreated?: (enquiry: Enquiry) => void;
+  onOpenSetup?: () => void;
 }) {
   const [broker, setBroker] = useState("");
   const [party, setParty] = useState("");
@@ -56,6 +65,7 @@ export function NewEnquiryDialog({
   const [enquiryFor, setEnquiryFor] = useState<EnquiryType>("PURCHASE");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const webhookUrl = loadWebhookUrl();
 
   const resetForm = () => {
     setBroker("");
@@ -101,40 +111,84 @@ export function NewEnquiryDialog({
       enquiryFor,
     };
 
-    try {
-      // 1. Post to Google Sheet via server function (A1:L)
-      const webhookUrl = loadWebhookUrl();
-      const enquiryPayload: { enquiry: NewEnquiryInput; webhookUrl?: string } = {
-        enquiry: payload,
-      };
-      if (webhookUrl) enquiryPayload.webhookUrl = webhookUrl;
-      const res = await addEnquiry({ data: enquiryPayload });
+    // 1. Dashboard me instant show karein
+    const newEnquiry = createEnquiryFromInput(payload);
+    onCreated?.(newEnquiry);
 
-      // 2. Create local Enquiry object to immediately show in dashboard
-      const newEnquiry = createEnquiryFromInput(payload);
-      onCreated?.(newEnquiry);
-
-      if (res.liveSaved) {
-        toast.success(`Deal form Google Sheet me post ho gaya! (Row: ${broker} - ${item})`);
-      } else {
-        toast.success(
-          `Deal dashboard me jud gaya! (Note: Live sheet connect hone par Google Sheet me sync ho jayega).`,
-        );
-      }
-
+    // 2. Agar Webhook URL nahi hai to prompt karein
+    if (!webhookUrl) {
+      toast.warning(
+        "Dashboard me save hua, lekin Sheet connect nahi hai! Kripya 'Sheet Setup' se connect karein.",
+        { duration: 5000 },
+      );
       resetForm();
       onOpenChange(false);
-    } catch (err) {
-      console.error("Failed to post enquiry", err);
-      // Still allow local creation so owner work is never blocked
-      const fallbackEnquiry = createEnquiryFromInput(payload);
-      onCreated?.(fallbackEnquiry);
-      toast.success("Deal dashboard me add ho gaya (saved locally).");
-      resetForm();
-      onOpenChange(false);
-    } finally {
       setIsSubmitting(false);
+      onOpenSetup?.();
+      return;
     }
+
+    // 3. Post to Google Sheet
+    let sheetSuccess = false;
+
+    // Method A: Server function call (with redirect follow & validation)
+    try {
+      const res = await addEnquiry({ data: { enquiry: payload, webhookUrl } });
+      if (res.liveSaved) {
+        sheetSuccess = true;
+      }
+    } catch (err) {
+      console.warn("Server addEnquiry call error, trying direct browser fetch...", err);
+    }
+
+    // Method B: Direct browser fetch (POST and GET fallback)
+    if (!sheetSuccess) {
+      try {
+        await fetch(webhookUrl, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify(payload),
+        });
+        sheetSuccess = true;
+      } catch (postErr) {
+        console.warn("Browser direct POST failed, trying GET fallback...", postErr);
+        try {
+          const qParams = new URLSearchParams({
+            timestamp: payload.timestamp || "",
+            broker: payload.broker,
+            party: payload.party || "",
+            item: payload.item,
+            location: payload.location || "",
+            mode: payload.mode || "Delivery",
+            rate: payload.rate !== undefined && payload.rate !== null ? String(payload.rate) : "",
+            billType: payload.billType || "Bill",
+            cd: payload.cd || "",
+            otherCondition: payload.otherCondition || "",
+            remarks: payload.remarks || "",
+            enquiryFor: payload.enquiryFor || "PURCHASE",
+          });
+          await fetch(`${webhookUrl}?${qParams.toString()}`, { mode: "no-cors" });
+          sheetSuccess = true;
+        } catch (getErr) {
+          console.error("Direct browser fetch completely failed:", getErr);
+        }
+      }
+    }
+
+    if (sheetSuccess) {
+      toast.success(
+        `✓ Deal Google Sheet "Form Deta" me post ho gaya! (${broker} – ${item})`,
+      );
+    } else {
+      toast.error(
+        "Sheet me post nahi ho saka. Kripya 'Sheet Setup' me Apps Script URL check karein.",
+      );
+    }
+
+    resetForm();
+    onOpenChange(false);
+    setIsSubmitting(false);
   };
 
   return (
@@ -148,18 +202,58 @@ export function NewEnquiryDialog({
                 Google Sheet A1:L Entry Form
               </span>
               <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-secondary-foreground">
-                Live Post
+                Live Post: Form Deta
               </span>
             </div>
             <DialogTitle className="text-2xl font-bold">
               Naya Deal / Enquiry Form
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Form submit karne par data seedhe &ldquo;Enquiry Capture (Responses)&rdquo; sheet ke A1:L columns me post hoga.
+              Form submit karne par data seedhe aapki sheet ke <b>"Form Deta"</b> tab me post hoga.
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4 text-sm">
+            {/* Sheet Connection Status Banner */}
+            {!webhookUrl ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="size-4 shrink-0 text-amber-600 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Google Sheet Connect Nahi Hai</p>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                      Data sheet me post karne ke liye Apps Script URL connect karein.
+                    </p>
+                  </div>
+                </div>
+                {onOpenSetup && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onOpenChange(false);
+                      onOpenSetup();
+                    }}
+                    className="shrink-0 h-7 text-xs border-amber-500/50 hover:bg-amber-500/20 gap-1.5"
+                  >
+                    <Settings2 className="size-3" />
+                    Sheet Setup
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between rounded-lg border border-green-600/30 bg-green-500/10 px-3 py-1.5 text-xs text-green-700 dark:text-green-300">
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <CheckCircle2 className="size-3.5 text-green-600" />
+                  Target Sheet: Form Deta (Connected)
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[200px]">
+                  {webhookUrl}
+                </span>
+              </div>
+            )}
+
             {/* Timestamp Notice (Col A) */}
             <div className="flex items-center justify-between rounded-lg border border-border/80 bg-muted/40 px-3.5 py-2 text-xs">
               <span className="text-muted-foreground">
@@ -283,7 +377,7 @@ export function NewEnquiryDialog({
               </div>
             </div>
 
-            {/* Row 4: Location (Col E) & Bill / K (Col H) */}
+            {/* Row 4: Location (Col E) & Bill / Kachha (Col H) */}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="form-location" className="text-xs font-semibold">
@@ -299,7 +393,7 @@ export function NewEnquiryDialog({
 
               <div className="space-y-1.5">
                 <Label htmlFor="form-bill" className="text-xs font-semibold">
-                  Bill / K (Col H)
+                  Bill / Kachha (Col H)
                 </Label>
                 <Select value={billType} onValueChange={setBillType}>
                   <SelectTrigger id="form-bill">
@@ -388,4 +482,3 @@ export function NewEnquiryDialog({
     </Dialog>
   );
 }
-

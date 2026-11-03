@@ -272,6 +272,7 @@ function Dashboard() {
         existingBrokers={brokerNames}
         existingItems={itemNames}
         onCreated={handleEnquiryCreated}
+        onOpenSetup={() => setOpenSheetSetup(true)}
       />
       <SheetSetupDialog
         open={openSheetSetup}

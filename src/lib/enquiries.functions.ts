@@ -259,8 +259,9 @@ export const addEnquiry = createServerFn({ method: "POST" })
 
       const row = enquiryToSheetRow(enquiry);
 
-      // 1. Try Google Apps Script Web App / Webhook URL
-      if (webhookUrl) {
+      // 1. Try Google Apps Script Web App URL
+      if (webhookUrl && webhookUrl.includes("script.google.com")) {
+        // Method A: POST JSON
         try {
           const res = await fetch(webhookUrl, {
             method: "POST",
@@ -268,15 +269,53 @@ export const addEnquiry = createServerFn({ method: "POST" })
               "Content-Type": "application/json",
             },
             body: JSON.stringify(enquiry),
+            redirect: "follow",
           });
 
           if (res.ok) {
+            try {
+              const json = (await res.json()) as { success?: boolean; error?: string };
+              if (json && json.success) {
+                return { success: true, liveSaved: true };
+              }
+              if (json && json.error) {
+                console.error("Apps Script reported error:", json.error);
+                return { success: false, liveSaved: false, error: json.error };
+              }
+            } catch {
+              // Plain text or opaque response after redirect
+              return { success: true, liveSaved: true };
+            }
+          }
+        } catch (err) {
+          console.warn("Apps Script POST failed, trying GET fallback...", err);
+        }
+
+        // Method B: GET query fallback
+        try {
+          const qParams = new URLSearchParams({
+            timestamp: enquiry.timestamp || "",
+            broker: enquiry.broker || "",
+            party: enquiry.party || "",
+            item: enquiry.item || "",
+            location: enquiry.location || "",
+            mode: enquiry.mode || "Delivery",
+            rate: enquiry.rate !== undefined && enquiry.rate !== null ? String(enquiry.rate) : "",
+            billType: enquiry.billType || "Bill",
+            cd: enquiry.cd || "",
+            otherCondition: enquiry.otherCondition || "",
+            remarks: enquiry.remarks || "",
+            enquiryFor: (enquiry.enquiryFor || "PURCHASE").toUpperCase(),
+          });
+          const getRes = await fetch(`${webhookUrl}?${qParams.toString()}`, {
+            method: "GET",
+            redirect: "follow",
+          });
+          if (getRes.ok) {
             return { success: true, liveSaved: true };
           }
-          const text = await res.text();
-          console.error("Webhook POST failed:", text);
-        } catch (err) {
-          console.error("Webhook POST error:", err);
+        } catch (getErr) {
+          console.error("Apps Script GET fallback error:", getErr);
         }
       }
 
@@ -307,14 +346,14 @@ export const addEnquiry = createServerFn({ method: "POST" })
           return {
             success: false,
             liveSaved: false,
-            error: `Live sheet could not be updated (${res.status}).`,
+            error: `Live sheet update nahi ho saka (${res.status}).`,
           };
         } catch (err) {
           console.error("Failed to append via Lovable gateway", err);
           return {
             success: false,
             liveSaved: false,
-            error: "Network error while connecting to Google Sheets.",
+            error: "Google Sheets connection me network error.",
           };
         }
       }
@@ -323,7 +362,7 @@ export const addEnquiry = createServerFn({ method: "POST" })
         success: true,
         liveSaved: false,
         error:
-          "Google Sheets live connection not linked. Enquiry is saved in dashboard. Click 'Sheet Setup' to connect your Google Sheet.",
+          "Google Sheet live connect nahi hai. Data dashboard me save hua. Sheet me post karne ke liye 'Sheet Setup' karein.",
       };
     },
   );
@@ -339,18 +378,80 @@ export const initWorksheet = createServerFn({ method: "POST" })
       const sheetsKey = process.env["GOOGLE_SHEETS_API_KEY"];
 
       if (webhookUrl) {
+        if (webhookUrl.includes("docs.google.com/spreadsheets")) {
+          return {
+            success: false,
+            sheetName: TARGET_SHEET_NAME,
+            message: "Invalid URL",
+            error:
+              "Ye Google Sheet ka link hai! Step 2 me diye gaye code ko Apps Script me Deploy karke mila Web App URL (script.google.com/macros/s/.../exec) yahan dalein.",
+          };
+        }
+
+        if (!webhookUrl.includes("script.google.com/macros/s/")) {
+          return {
+            success: false,
+            sheetName: TARGET_SHEET_NAME,
+            message: "Invalid URL",
+            error:
+              "URL galat lag raha hai. Sahi Apps Script Web App URL 'https://script.google.com/macros/s/.../exec' se shuru hota hai.",
+          };
+        }
+
         try {
-          // Trigger Webhook GET or setup check
-          const res = await fetch(webhookUrl, { method: "GET" });
-          if (res.ok) {
+          const res = await fetch(webhookUrl, { method: "GET", redirect: "follow" });
+          if (!res.ok) {
+            return {
+              success: false,
+              sheetName: TARGET_SHEET_NAME,
+              message: `HTTP Error ${res.status}`,
+              error: `Apps Script ne HTTP ${res.status} error diya. Check karein ki Deploy karte waqt 'Who has access' ko 'Anyone' chuna hai.`,
+            };
+          }
+
+          const text = await res.text();
+          if (text.includes("<!DOCTYPE") || text.includes("<html") || text.includes("accounts.google.com")) {
+            return {
+              success: false,
+              sheetName: TARGET_SHEET_NAME,
+              message: "Permission / Login Required",
+              error:
+                "Google login page mila! Apps Script me 'Deploy > Manage deployments > Edit' karein aur 'Who has access' ko 'Anyone' (Koi bhi) set karein.",
+            };
+          }
+
+          try {
+            const json = JSON.parse(text) as { success?: boolean; error?: string; sheetName?: string };
+            if (json.success) {
+              return {
+                success: true,
+                sheetName: json.sheetName || TARGET_SHEET_NAME,
+                message: `✓ Google Sheet tab "${json.sheetName || TARGET_SHEET_NAME}" se successfully connect ho gaya!`,
+              };
+            }
+            if (json.error) {
+              return {
+                success: false,
+                sheetName: TARGET_SHEET_NAME,
+                message: "Apps Script Error",
+                error: `Apps Script error: ${json.error}`,
+              };
+            }
+          } catch {
             return {
               success: true,
               sheetName: TARGET_SHEET_NAME,
-              message: "Worksheet verified and connected via Google Apps Script Web App!",
+              message: `✓ Google Apps Script successfully connect ho gaya!`,
             };
           }
         } catch (err) {
           console.error("Webhook init error", err);
+          return {
+            success: false,
+            sheetName: TARGET_SHEET_NAME,
+            message: "Connection Timeout / Error",
+            error: "Apps Script URL tak reach nahi ho paya. Kripya URL check karein.",
+          };
         }
       }
 
@@ -368,7 +469,7 @@ export const initWorksheet = createServerFn({ method: "POST" })
       return {
         success: false,
         sheetName: TARGET_SHEET_NAME,
-        message: "No live credentials found.",
+        message: "No credentials",
         error: "Google Sheets connection not configured. Use the 1-click Google Apps Script.",
       };
     },
