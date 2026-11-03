@@ -204,28 +204,47 @@ export const getEnquiries = createServerFn({ method: "GET" })
       }
     }
 
-    // 3. Try Google Sheets gviz public visualization endpoint
-    try {
-      const gvizUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json`;
-      const gvizRes = await fetch(gvizUrl, {
-        headers: { Accept: "text/plain" },
-      });
+    // 3. Try Google Sheets gviz public visualization endpoint across candidate sheets
+    const gvizSheets = ["Form Deta", "Form responses 1", ""];
+    const combinedGvizRows: string[][] = [];
+    const seenGviz = new Set<string>();
 
-      if (gvizRes.ok) {
-        const text = await gvizRes.text();
-        const rows = parseGvizResponse(text);
-        if (rows.length > 1) {
-          return {
-            source: "live",
-            sheetTitle: "Enquiry Capture (Responses)",
-            fetchedAt: new Date().toISOString(),
-            enquiries: parseRows(rows),
-            connectionMethod: "gviz",
-          };
+    for (const sheetName of gvizSheets) {
+      try {
+        const sheetParam = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : "";
+        const gvizUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json${sheetParam}`;
+        const gvizRes = await fetch(gvizUrl, { headers: { Accept: "text/plain" } });
+
+        if (gvizRes.ok) {
+          const text = await gvizRes.text();
+          const rows = parseGvizResponse(text);
+          if (rows.length > 1) {
+            if (combinedGvizRows.length === 0) {
+              combinedGvizRows.push(rows[0]!); // header
+            }
+            for (let r = 1; r < rows.length; r++) {
+              const row = rows[r]!;
+              const key = row.slice(0, 4).join("|").toLowerCase();
+              if (key && !seenGviz.has(key)) {
+                seenGviz.add(key);
+                combinedGvizRows.push(row);
+              }
+            }
+          }
         }
+      } catch (err) {
+        console.warn(`gviz fetch for '${sheetName}' failed`, err);
       }
-    } catch (err) {
-      console.warn("gviz fetch fallback failed", err);
+    }
+
+    if (combinedGvizRows.length > 1) {
+      return {
+        source: "live",
+        sheetTitle: "Enquiry Capture (Responses)",
+        fetchedAt: new Date().toISOString(),
+        enquiries: parseRows(combinedGvizRows),
+        connectionMethod: "gviz",
+      };
     }
 
     // 4. Fallback to snapshot

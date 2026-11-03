@@ -159,9 +159,9 @@ export function EnquiryTable({
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      <div className={cn("overflow-x-auto overflow-y-auto", compact ? "max-h-[440px]" : "max-h-[560px]")}>
         <table className="w-full min-w-[760px] text-sm">
-          <thead className="bg-muted/60">
+          <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur-xs border-b border-border shadow-2xs">
             <tr className="eyebrow text-muted-foreground">
               {!compact && (
                 <Th>

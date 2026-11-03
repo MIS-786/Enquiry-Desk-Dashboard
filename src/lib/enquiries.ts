@@ -551,6 +551,15 @@ export function saveDeletedId(id: string): void {
   }
 }
 
+export function clearDeletedIds(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(DELETED_STORAGE_KEY);
+  } catch (err) {
+    console.error("Failed to clear deleted ids", err);
+  }
+}
+
 export function removeFromCreatedEnquiries(id: string): void {
   if (typeof window === "undefined") return;
   try {

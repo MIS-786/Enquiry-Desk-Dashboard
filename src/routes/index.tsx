@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { FileSpreadsheet, Link2, Plus, RefreshCw, RotateCcw } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet, Link2, Plus, RefreshCw, RotateCcw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -16,6 +16,7 @@ import { SheetSetupDialog } from "@/components/dashboard/SheetSetupDialog";
 import { Button } from "@/components/ui/button";
 import {
   applyFilters,
+  clearDeletedIds,
   clearEnquiryOverrides,
   DEFAULT_FILTERS,
   formatDateTime,
@@ -88,8 +89,16 @@ function Dashboard() {
 
   const handleResetOverrides = useCallback(() => {
     clearEnquiryOverrides();
+    clearDeletedIds();
     setOverrides({});
-    toast.info("Saare manual edits reset ho gaye.");
+    setDeletedIds(new Set());
+    toast.info("Saare manual edits aur deleted entries reset ho gaye.");
+  }, []);
+
+  const handleRestoreDeleted = useCallback(() => {
+    clearDeletedIds();
+    setDeletedIds(new Set());
+    toast.success("Saare deleted entries wapas restore ho gaye!");
   }, []);
 
   const handleEnquiryCreated = useCallback(
@@ -180,16 +189,28 @@ function Dashboard() {
               Updated {formatDateTime(data.fetchedAt)}
             </p>
           </div>
-          {Object.keys(overrides).length > 0 && (
+          {(Object.keys(overrides).length > 0 || deletedIds.size > 0) && (
             <Button
               variant="outline"
               size="sm"
               onClick={handleResetOverrides}
               className="gap-1.5 border-dashed text-xs text-muted-foreground hover:text-foreground"
-              title="Reset all manual edits back to original sheet values"
+              title="Reset all manual edits and restore deleted rows"
             >
               <RotateCcw className="size-3" />
-              Reset {Object.keys(overrides).length} edits
+              Reset {Object.keys(overrides).length + deletedIds.size} changes
+            </Button>
+          )}
+          {deletedIds.size > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRestoreDeleted}
+              className="gap-1.5 border-amber-500/50 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
+              title="Deleted rows wapas layein"
+            >
+              <RotateCcw className="size-3" />
+              Restore {deletedIds.size} deleted
             </Button>
           )}
           <Button
@@ -223,6 +244,25 @@ function Dashboard() {
       </header>
 
       <div className="space-y-4">
+        {deletedIds.size > 0 && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-900 dark:text-amber-200">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 shrink-0 text-amber-600" />
+              <span>
+                <b>{deletedIds.size} entries</b> dashboard se delete (hide) ki gayi hain.
+              </span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleRestoreDeleted}
+              className="h-7 border-amber-500/60 font-semibold text-xs hover:bg-amber-500/20"
+            >
+              Sabhi Wapas Layein (Restore All)
+            </Button>
+          </div>
+        )}
         <KpiStrip list={filtered} todayCount={todayCount} />
         <FilterBar
           filters={filters}

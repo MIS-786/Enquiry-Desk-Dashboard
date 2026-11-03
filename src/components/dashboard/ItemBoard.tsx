@@ -38,8 +38,8 @@ export function ItemBoard({
   };
 
   return (
-    <section className="surface overflow-hidden">
-      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border px-5 py-4">
+    <section className="surface flex flex-col h-[580px] overflow-hidden">
+      <header className="shrink-0 flex flex-wrap items-end justify-between gap-3 border-b border-border px-5 py-4">
         <div>
           <p className="eyebrow text-muted-foreground">
             {viewMode === "items" ? "Item-wise deals" : "Broker-wise deals"}
@@ -85,7 +85,8 @@ export function ItemBoard({
         </div>
       </header>
 
-      {/* ITEM-WISE VIEW (DEFAULT) */}
+      <div className="flex-1 overflow-y-auto">
+        {/* ITEM-WISE VIEW (DEFAULT) */}
       {viewMode === "items" && (
         <>
           {items.length === 0 ? (
@@ -292,6 +293,7 @@ export function ItemBoard({
           )}
         </>
       )}
+      </div>
     </section>
   );
 }
