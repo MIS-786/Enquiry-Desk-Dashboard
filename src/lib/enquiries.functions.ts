@@ -11,7 +11,7 @@ import {
 import { SNAPSHOT_ROWS, SNAPSHOT_TAKEN_AT } from "./enquiries.snapshot";
 
 export const SPREADSHEET_ID = "13CRg_4u7HSeMELiBYF2q5UuVhkNf_DEJPViOaAPwIrk";
-const TARGET_SHEET_NAME = "Form responses 1";
+const TARGET_SHEET_NAME = "Form Deta";
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_sheets/v4";
 
 export const SHEET_HEADERS = [
@@ -78,7 +78,7 @@ async function ensureWorksheet(
       return { sheetName: TARGET_SHEET_NAME, created: false };
     }
 
-    // 2. Target sheet doesn't exist; attempt to create "Form responses 1"
+    // 2. Target sheet doesn't exist; attempt to create "Form Deta"
     const batchUrl = `${GATEWAY_URL}/spreadsheets/${SPREADSHEET_ID}:batchUpdate`;
     const createRes = await fetch(batchUrl, {
       method: "POST",
@@ -118,11 +118,6 @@ async function ensureWorksheet(
       return { sheetName: TARGET_SHEET_NAME, created: true };
     }
 
-    // If creating failed (e.g. read-only permissions), use the first existing sheet (e.g. Sheet1)
-    if (existingSheets.length > 0) {
-      return { sheetName: existingSheets[0]!, created: false };
-    }
-
     return { sheetName: TARGET_SHEET_NAME, created: false };
   } catch (err) {
     console.error("Failed to ensure worksheet", err);
@@ -154,15 +149,22 @@ export const getEnquiries = createServerFn({ method: "GET" })
           headers: { Accept: "application/json" },
         });
         if (res.ok) {
-          const json = (await res.json()) as { values?: string[][] };
-          if (Array.isArray(json.values) && json.values.length > 0) {
-            return {
-              source: "live",
-              sheetTitle: "Enquiry Capture (Responses)",
-              fetchedAt: new Date().toISOString(),
-              enquiries: parseRows(json.values),
-              connectionMethod: "webhook",
-            };
+          const json = (await res.json()) as { values?: string[][]; sheetName?: string };
+          if (
+            json.sheetName === TARGET_SHEET_NAME &&
+            Array.isArray(json.values) &&
+            json.values.length > 0
+          ) {
+            const enquiries = parseRows(json.values);
+            if (enquiries.length > 0) {
+              return {
+                source: "live",
+                sheetTitle: "Enquiry Capture (Responses)",
+                fetchedAt: new Date().toISOString(),
+                enquiries,
+                connectionMethod: "webhook",
+              };
+            }
           }
         }
       } catch (err) {
@@ -186,14 +188,17 @@ export const getEnquiries = createServerFn({ method: "GET" })
           const json = (await res.json()) as { values?: string[][] };
           const rows = json.values ?? [];
           if (rows.length > 0) {
-            return {
-              source: "live",
-              sheetTitle: "Enquiry Capture (Responses)",
-              fetchedAt: new Date().toISOString(),
-              enquiries: parseRows(rows),
-              activeSheetName: sheetName,
-              connectionMethod: "lovable_gateway",
-            };
+            const enquiries = parseRows(rows);
+            if (enquiries.length > 0) {
+              return {
+                source: "live",
+                sheetTitle: "Enquiry Capture (Responses)",
+                fetchedAt: new Date().toISOString(),
+                enquiries,
+                activeSheetName: sheetName,
+                connectionMethod: "lovable_gateway",
+              };
+            }
           }
         } else {
           const body = await res.text();
@@ -204,10 +209,14 @@ export const getEnquiries = createServerFn({ method: "GET" })
       }
     }
 
-    // 3. Try Google Sheets gviz public visualization endpoint across candidate sheets
-    const gvizSheets = ["Form Deta", "Form responses 1", ""];
+    // 3. Try the Form Deta tab via Google Sheets gviz
+    const gvizSheets = [TARGET_SHEET_NAME];
     const combinedGvizRows: string[][] = [];
     const seenGviz = new Set<string>();
+    const hasEnquiryHeaders = (row: string[] | undefined) => {
+      const headers = new Set((row ?? []).map((value) => value.trim().toLowerCase()));
+      return headers.has("timestamp") && headers.has("broker") && headers.has("item");
+    };
 
     for (const sheetName of gvizSheets) {
       try {
@@ -218,7 +227,7 @@ export const getEnquiries = createServerFn({ method: "GET" })
         if (gvizRes.ok) {
           const text = await gvizRes.text();
           const rows = parseGvizResponse(text);
-          if (rows.length > 1) {
+          if (rows.length > 1 && hasEnquiryHeaders(rows[0])) {
             if (combinedGvizRows.length === 0) {
               combinedGvizRows.push(rows[0]!); // header
             }
@@ -237,12 +246,13 @@ export const getEnquiries = createServerFn({ method: "GET" })
       }
     }
 
-    if (combinedGvizRows.length > 1) {
+    const gvizEnquiries = parseRows(combinedGvizRows);
+    if (gvizEnquiries.length > 0) {
       return {
         source: "live",
         sheetTitle: "Enquiry Capture (Responses)",
         fetchedAt: new Date().toISOString(),
-        enquiries: parseRows(combinedGvizRows),
+        enquiries: gvizEnquiries,
         connectionMethod: "gviz",
       };
     }

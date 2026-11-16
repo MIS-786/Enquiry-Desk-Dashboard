@@ -35,7 +35,6 @@ export const APPS_SCRIPT_CODE = `// ============================================
 
 var SPREADSHEET_ID = "13CRg_4u7HSeMELiBYF2q5UuVhkNf_DEJPViOaAPwIrk";
 var SHEET_NAME = "Form Deta";
-var TARGET_GID = 1754193838;
 
 var HEADERS = [
   "Timestamp",
@@ -65,18 +64,17 @@ function getTargetSheet() {
   if (!ss) throw new Error("Spreadsheet nahi mila! ID: " + SPREADSHEET_ID);
 
   var sheet = ss.getSheetByName(SHEET_NAME);
-  if (sheet) return sheet;
+  if (sheet) {
+    if (mapHeadersToColumns(sheet.getDataRange().getValues()[0] || [])) return sheet;
+    throw new Error("Form Deta tab ke headers enquiry format se match nahi karte.");
+  }
 
   var sheets = ss.getSheets();
   for (var i = 0; i < sheets.length; i++) {
     if (sheets[i].getName().trim().toLowerCase() === SHEET_NAME.toLowerCase()) {
-      return sheets[i];
-    }
-  }
-
-  for (var j = 0; j < sheets.length; j++) {
-    if (sheets[j].getSheetId() === TARGET_GID) {
-      return sheets[j];
+      if (mapHeadersToColumns(sheets[i].getDataRange().getValues()[0] || [])) {
+        return sheets[i];
+      }
     }
   }
 
@@ -114,11 +112,7 @@ function mapHeadersToColumns(headerRow) {
     }
   }
 
-  for (var k = 0; k < 12; k++) {
-    if (colIndices[k] === -1 && k < headerRow.length) {
-      colIndices[k] = k;
-    }
-  }
+  if (colIndices[0] === -1 || colIndices[1] === -1 || colIndices[3] === -1) return null;
   return colIndices;
 }
 
@@ -201,20 +195,14 @@ function doGet(e) {
       var name = sheet.getName().trim();
       var nameLower = name.toLowerCase();
 
-      var isResponseSheet = (
-        nameLower === SHEET_NAME.toLowerCase() ||
-        sheet.getSheetId() === TARGET_GID ||
-        nameLower.indexOf("form response") !== -1 ||
-        nameLower.indexOf("form deta") !== -1
-      );
-
-      if (!isResponseSheet) continue;
+      if (nameLower !== SHEET_NAME.toLowerCase()) continue;
 
       var sheetValues = sheet.getDataRange().getValues();
       if (!sheetValues || sheetValues.length <= 1) continue;
 
       var header = sheetValues[0];
       var colMap = mapHeadersToColumns(header);
+      if (!colMap) continue;
 
       for (var r = 1; r < sheetValues.length; r++) {
         var srcRow = sheetValues[r];
@@ -234,9 +222,9 @@ function doGet(e) {
         var itemVal = String(standardizedRow[3] || "").trim();
         var tsVal = String(standardizedRow[0] || "").trim();
 
-        if (!brokerVal && !itemVal) continue;
+        if (!tsVal || !brokerVal || !itemVal) continue;
 
-        var rowKey = (tsVal + "|" + brokerVal.toLowerCase() + "|" + itemVal.toLowerCase()).replace(/\s+/g, "");
+        var rowKey = (tsVal + "|" + brokerVal.toLowerCase() + "|" + itemVal.toLowerCase()).replace(/\\s+/g, "");
         if (!seenKeys[rowKey]) {
           seenKeys[rowKey] = true;
           combinedDataRows.push(standardizedRow);
@@ -253,7 +241,7 @@ function doGet(e) {
     var finalValues = [HEADERS].concat(combinedDataRows);
     return jsonResponse({
       success: true,
-      sheetName: "Form Deta + Responses",
+      sheetName: SHEET_NAME,
       totalRows: combinedDataRows.length,
       values: finalValues
     });

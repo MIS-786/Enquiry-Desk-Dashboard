@@ -6,6 +6,7 @@ import {
   DEFAULT_FILTERS,
   enquiryToSheetRow,
   formatSheetTimestamp,
+  parseGvizResponse,
   parseRows,
   parseSheetDate,
   summarizeBrokers,
@@ -18,6 +19,43 @@ import { SNAPSHOT_ROWS } from "./enquiries.snapshot";
 describe("enquiry parsing", () => {
   it("reads form timestamps as day/month/year in India time", () => {
     expect(parseSheetDate("30/05/2026 16:09:15")?.toISOString()).toBe("2026-05-30T10:39:15.000Z");
+  });
+
+  it("parses Google Visualization date values in India time", () => {
+    const parsed = parseGvizResponse(
+      'google.visualization.Query.setResponse({"table":{"cols":[{"label":"Timestamp"}],"rows":[{"c":[{"v":"Date(2026,10,3,16,3,0)","f":"03 Nov, 4:03 pm"}]}]}});',
+    );
+    expect(parseSheetDate(parsed[1]?.[0] ?? "")?.toISOString()).toBe("2026-11-03T10:33:00.000Z");
+  });
+
+  it("ignores dashboard summary rows and repeated table headers", () => {
+    const rows = [
+      ["Timestamp", "Broker", "Party Name", "Item", "Delivery / Pickup Location", "Delivery / Motorcut", "Rate", "Bill / K", "CD Condition", "Other Condition", "Remarks", "ENQUIRY FOR"],
+      ["21", "17", "15", "4", "₹2,714", "0", "₹0"],
+      ["Latest 15 enquiries"],
+      ["Time", "Broker", "Party", "Item"],
+      ["03/11/2026 16:03:00", "Raju Gala", "", "IR New"],
+    ];
+
+    expect(parseRows(rows).map((enquiry) => enquiry.broker)).toEqual(["Raju Gala"]);
+  });
+
+  it("maps Form Deta values by their column headers", () => {
+    const rows = [
+      ["Item", "Timestamp", "Broker", "Bill / Kachha", "Delivery / Motorcut", "Delivery / Pickup Location", "Rate", "Party Name", "ENQUIRY FOR", "CD Condition", "Other Condition", "Remarks"],
+      ["PBC LOT", "30/05/2026 16:09:00", "RAJENDRA KHANDELWAL", "Bill", "Delivery", "MNDH / CWC 4", "2740", "", "PURCHASE", "", "", ""],
+    ];
+
+    const [enquiry] = parseRows(rows);
+    expect(enquiry).toMatchObject({
+      broker: "Rajendra Khandelwal",
+      item: "PBC LOT",
+      location: "MNDH / CWC 4",
+      mode: "Delivery",
+      rate: 2740,
+      billType: "Bill",
+      enquiryFor: "PURCHASE",
+    });
   });
 
   it("groups the same broker even with extra spaces or different case", () => {

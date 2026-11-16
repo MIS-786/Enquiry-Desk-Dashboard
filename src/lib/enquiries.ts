@@ -26,12 +26,16 @@ export interface Enquiry {
 const HEADER_MAP: Record<string, keyof RowFields> = {
   timestamp: "timestamp",
   broker: "broker",
+  party: "party",
   "party name": "party",
   item: "item",
+  location: "location",
   "delivery / pickup location": "location",
+  mode: "mode",
   "delivery / motorcut": "mode",
   rate: "rate",
   "bill / k": "billType",
+  "bill / kachha": "billType",
   "cd condition": "cd",
   "other condition": "otherCondition",
   remarks: "remarks",
@@ -72,7 +76,24 @@ export function displayName(value: string): string {
 
 /** Parses "dd/mm/yyyy hh:mm:ss" (Google Form, India locale) as IST. */
 export function parseSheetDate(value: string): Date | null {
-  const m = cleanText(value).match(
+  const text = cleanText(value);
+  const gviz = text.match(
+    /^Date\((\d{4}),(\d{1,2}),(\d{1,2})(?:,(\d{1,2})(?:,(\d{1,2})(?:,(\d{1,2}))?)?)?\)$/,
+  );
+  if (gviz) {
+    const [, y = "", month = "", day = "", h = "0", mi = "0", s = "0"] = gviz;
+    const pad = (n: string) => n.padStart(2, "0");
+    const iso = `${y}-${pad(String(Number(month) + 1))}-${pad(day)}T${pad(h)}:${pad(mi)}:${pad(s)}+05:30`;
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
+    const date = new Date(text);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const m = text.match(
     /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/,
   );
   if (!m) return null;
@@ -114,10 +135,11 @@ export function parseRows(rows: string[][]): Enquiry[] {
   body.forEach((row, i) => {
     const ts = get(row, "timestamp");
     const brokerRaw = get(row, "broker");
-    if (!ts && !brokerRaw) return;
     const date = parseSheetDate(ts);
+    const itemRaw = get(row, "item");
+    if (!date || !brokerRaw || !itemRaw) return;
     const broker = displayName(brokerRaw) || "Unknown";
-    const item = displayName(get(row, "item")) || "—";
+    const item = displayName(itemRaw) || "—";
     const enquiryForRaw = get(row, "enquiryFor");
     result.push({
       id: `row-${i + 2}`,
@@ -621,6 +643,7 @@ export function parseGvizResponse(text: string): string[][] {
         const rowVals: string[] = r.c.map(
           (cell: { v?: unknown; f?: string } | null) => {
             if (!cell) return "";
+            if (typeof cell.v === "string" && /^Date\(/.test(cell.v)) return cell.v;
             return cell.f !== undefined
               ? String(cell.f)
               : cell.v !== null && cell.v !== undefined
