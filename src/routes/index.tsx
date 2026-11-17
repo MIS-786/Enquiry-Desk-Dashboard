@@ -84,7 +84,13 @@ function Dashboard() {
       ...prev,
       [id]: { ...(prev[id] ?? {}), ...patch },
     }));
-    toast.success("Deal data update ho gaya!");
+    if (patch.dealStatus === "closed") {
+      toast.success("Deal complete karke Closed list mein bhej diya.");
+    } else if (patch.dealStatus === "pending") {
+      toast.success("Deal Pending list mein wapas aa gaya.");
+    } else {
+      toast.success("Deal data update ho gaya!");
+    }
   }, []);
 
   const handleResetOverrides = useCallback(() => {
@@ -131,12 +137,17 @@ function Dashboard() {
       });
   }, [data.enquiries, createdList, deletedIds, overrides]);
 
+  const statusFilteredAll = useMemo(
+    () =>
+      filters.status === "all" ? all : all.filter((enquiry) => enquiry.dealStatus === filters.status),
+    [all, filters.status],
+  );
   const filtered = useMemo(() => applyFilters(all, filters), [all, filters]);
   const brokers = useMemo(() => summarizeBrokers(filtered), [filtered]);
   const items = useMemo(() => summarizeItems(filtered), [filtered]);
 
   const todayStart = periodStart("today") ?? 0;
-  const todayCount = all.filter(
+  const todayCount = statusFilteredAll.filter(
     (e) => e.timestamp && new Date(e.timestamp).getTime() >= todayStart,
   ).length;
 
@@ -283,6 +294,13 @@ function Dashboard() {
         </div>
         <EnquiryTable
           list={filtered}
+          title={
+            filters.status === "pending"
+              ? "Pending deals"
+              : filters.status === "closed"
+                ? "Closed deals"
+                : "All deals"
+          }
           onBroker={setOpenBroker}
           onItem={setOpenItem}
           onUpdate={handleUpdateEnquiry}
@@ -293,14 +311,14 @@ function Dashboard() {
 
       <BrokerSheet
         brokerKey={openBroker}
-        all={all}
+        all={statusFilteredAll}
         onClose={() => setOpenBroker(null)}
         onUpdateEnquiry={handleUpdateEnquiry}
         onDeleteEnquiry={handleDeleteEnquiry}
       />
       <ItemSheet
         itemKey={openItem}
-        all={all}
+        all={statusFilteredAll}
         onClose={() => setOpenItem(null)}
         onOpenBroker={setOpenBroker}
         onUpdateEnquiry={handleUpdateEnquiry}

@@ -1,4 +1,14 @@
-import { ArrowDownUp, Check, ExternalLink, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  ArrowDownUp,
+  Check,
+  CheckCircle2,
+  ExternalLink,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -160,7 +170,7 @@ export function EnquiryTable({
       )}
 
       <div className={cn("overflow-x-auto overflow-y-auto", compact ? "max-h-[440px]" : "max-h-[560px]")}>
-        <table className="w-full min-w-[760px] text-sm">
+        <table className={cn("w-full text-sm", compact ? "min-w-[760px]" : "min-w-[1040px]")}>
           <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur-xs border-b border-border shadow-2xs">
             <tr className="eyebrow text-muted-foreground">
               {!compact && (
@@ -184,7 +194,10 @@ export function EnquiryTable({
               <Th>CD ✎</Th>
               <Th>Conditions / Remarks ✎</Th>
               <Th>For ✎</Th>
-              {(onUpdate || onDelete) && <Th className="text-right">Action</Th>}
+              <Th>Status</Th>
+              {(onUpdate || onDelete) && (
+                <Th className="text-right">{onUpdate ? "Mark Deal Complete" : "Action"}</Th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -433,6 +446,18 @@ export function EnquiryTable({
                   <Td>
                     <TypeBadge type={e.enquiryFor} label={e.enquiryForLabel} />
                   </Td>
+                  <Td>
+                    <span
+                      className={cn(
+                        "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold",
+                        e.dealStatus === "closed"
+                          ? "bg-muted text-muted-foreground"
+                          : "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                      )}
+                    >
+                      {e.dealStatus === "closed" ? "Closed" : "Pending"}
+                    </span>
+                  </Td>
 
                   {/* Actions Column */}
                   {(onUpdate || onDelete) && (
@@ -471,6 +496,35 @@ export function EnquiryTable({
                         <div className="flex items-center justify-end gap-1 opacity-75 transition-opacity group-hover:opacity-100">
                           {onUpdate && (
                             <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  onUpdate(e.id, {
+                                    dealStatus: e.dealStatus === "closed" ? "pending" : "closed",
+                                  })
+                                }
+                                className={cn(
+                                  "h-7 gap-1 px-2 text-xs font-semibold",
+                                  e.dealStatus === "closed"
+                                    ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                    : "text-primary hover:bg-primary/10",
+                                )}
+                                title={e.dealStatus === "closed" ? "Reopen deal" : "Mark deal complete"}
+                                aria-label={
+                                  e.dealStatus === "closed" ? "Reopen deal" : "Mark deal complete"
+                                }
+                              >
+                                {e.dealStatus === "closed" ? (
+                                  <RotateCcw className="size-3" />
+                                ) : (
+                                  <CheckCircle2 className="size-3" />
+                                )}
+                                <span className="hidden sm:inline">
+                                  {e.dealStatus === "closed" ? "Reopen" : "Close"}
+                                </span>
+                              </Button>
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -518,7 +572,7 @@ export function EnquiryTable({
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={compact ? (onUpdate || onDelete ? 9 : 8) : (onUpdate || onDelete ? 12 : 11)}
+                  colSpan={compact ? (onUpdate || onDelete ? 10 : 9) : (onUpdate || onDelete ? 13 : 12)}
                   className="px-5 py-10 text-center text-muted-foreground"
                 >
                   Is filter me koi enquiry nahi mili.

@@ -19,6 +19,12 @@ const PERIODS: { value: Period; label: string }[] = [
   { value: "all", label: "All time" },
 ];
 
+const DEAL_STATUSES: { value: Filters["status"]; label: string }[] = [
+  { value: "pending", label: "Pending" },
+  { value: "closed", label: "Closed" },
+  { value: "all", label: "All deals" },
+];
+
 interface Option {
   value: string;
   label: string;
@@ -41,6 +47,25 @@ export function FilterBar({
 
   return (
     <section className="surface flex flex-col gap-3 p-3 lg:flex-row lg:items-center">
+      <div className="flex rounded-lg bg-muted p-1" role="tablist" aria-label="Deal status">
+        {DEAL_STATUSES.map((status) => (
+          <button
+            key={status.value}
+            role="tab"
+            aria-selected={filters.status === status.value}
+            onClick={() => set("status", status.value)}
+            className={cn(
+              "flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors lg:flex-none",
+              filters.status === status.value
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {status.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex rounded-lg bg-muted p-1" role="tablist" aria-label="Period">
         {PERIODS.map((p) => (
           <button

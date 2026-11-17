@@ -76,6 +76,18 @@ describe("enquiry parsing", () => {
     expect(milan.map((e) => e.item).sort()).toEqual(["Old Mota", "Sarna"]);
   });
 
+  it("shows pending deals by default and lets owners review closed deals", () => {
+    const all = parseRows(SNAPSHOT_ROWS);
+    const pending = all[0]!;
+    const closed = { ...all[1]!, dealStatus: "closed" as const };
+    const enquiries = [pending, closed];
+    expect(applyFilters(enquiries, DEFAULT_FILTERS)).toEqual([pending]);
+    expect(applyFilters(enquiries, { ...DEFAULT_FILTERS, status: "closed" })).toEqual([
+      enquiries[1],
+    ]);
+    expect(applyFilters(enquiries, { ...DEFAULT_FILTERS, status: "all" })).toEqual(enquiries);
+  });
+
   it("'Today' only keeps enquiries from the current India day", () => {
     const all = parseRows(SNAPSHOT_ROWS);
     const now = new Date("2026-10-28T13:00:00.000Z"); // 18:30 IST, 28 Oct

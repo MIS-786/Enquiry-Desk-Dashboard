@@ -2,9 +2,12 @@
 // Kept free of server/browser APIs so they can run anywhere and be unit-tested.
 
 export type EnquiryType = "PURCHASE" | "SALE" | "OTHER";
+export type DealStatus = "pending" | "closed";
+export type DealStatusFilter = DealStatus | "all";
 
 export interface Enquiry {
   id: string;
+  dealStatus: DealStatus;
   timestamp: string; // ISO string (IST source time)
   timestampLabel: string; // original text from the sheet
   broker: string;
@@ -143,6 +146,7 @@ export function parseRows(rows: string[][]): Enquiry[] {
     const enquiryForRaw = get(row, "enquiryFor");
     result.push({
       id: `row-${i + 2}`,
+      dealStatus: "pending",
       timestamp: date ? date.toISOString() : "",
       timestampLabel: ts,
       broker,
@@ -334,6 +338,7 @@ export function periodStart(period: Period, now: Date = new Date()): number | nu
 
 export interface Filters {
   period: Period;
+  status: DealStatusFilter;
   broker: string; // brokerKey or "all"
   item: string; // itemKey or "all"
   type: "all" | EnquiryType;
@@ -343,6 +348,7 @@ export interface Filters {
 
 export const DEFAULT_FILTERS: Filters = {
   period: "all",
+  status: "pending",
   broker: "all",
   item: "all",
   type: "all",
@@ -354,6 +360,7 @@ export function applyFilters(list: Enquiry[], f: Filters, now: Date = new Date()
   const start = periodStart(f.period, now);
   const q = f.search.trim().toLowerCase();
   return list.filter((e) => {
+    if (f.status !== "all" && e.dealStatus !== f.status) return false;
     if (start !== null && (!e.timestamp || new Date(e.timestamp).getTime() < start)) return false;
     if (f.broker !== "all" && e.brokerKey !== f.broker) return false;
     if (f.item !== "all" && e.itemKey !== f.item) return false;
@@ -510,6 +517,7 @@ export function createEnquiryFromInput(input: NewEnquiryInput, id?: string): Enq
 
   return {
     id: id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    dealStatus: "pending",
     timestamp: date ? date.toISOString() : new Date().toISOString(),
     timestampLabel: tsLabel,
     broker,
